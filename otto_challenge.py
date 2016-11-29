@@ -6,60 +6,65 @@ Created on Sun Oct 30 19:36:49 2016
 """
 
 import pandas as pd
-import numpy as np
-import random
-
+from sklearn import preprocessing
+from sklearn.preprocessing import scale
+from sklearn.cross_validation import cross_val_score
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.ensemble import GradientBoostingClassifier
-
-train=pd.read_csv('train.csv')
-test=pd.read_csv('test.csv')
-
-TARGET_LABEL='target'
-ID_LABEL='id'
-range_of_classes = range(1, 10)
-
-fullData = pd.concat([train,test],axis=0) #Combined both Train and Test Data set
-
-ID_col = [ID_LABEL]
-target_col = [TARGET_LABEL]
-features= list(set(list(fullData.columns))-set(ID_col)-set(target_col))
-other_col=['Type'] #Test and Train Data set identifier
-
-fullData.isnull().any() #Will return the feature with True or False,True means have missing value else False
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.decomposition import PCA
+from sklearn.feature_extraction.text import TfidfTransformer
 
 
+# import data
+train = pd.read_csv('input/train.csv')
+test = pd.read_csv('input/test.csv')
+sample = pd.read_csv('input/sampleSubmission.csv')
 
+# drop ids and get labels
+labels = train.target.values
+labels = preprocessing.LabelEncoder().fit_transform(labels)
+train = train.drop('id', axis=1)
+train = train.drop('target', axis=1)
+test = test.drop('id', axis=1)
 
-train['is_train'] = np.random.uniform(0, 1, len(train)) <= .75
-Train, Validate = train[train['is_train']==True], train[train['is_train']==False]
+#Feature engineering
+#train= train_original.copy()
+#test = test_original.copy()
+#
+#tfidf =TfidfTransformer(norm=u'l2', use_idf=True, smooth_idf=True, sublinear_tf=False)
+#train =tfidf.fit_transform(train_original.values)
+#test  =tfidf.fit_transform(test_original.values)
 
-x_train = Train[list(features)].values
-y_train = Train[TARGET_LABEL].values
-x_validate = Validate[list(features)].values
-y_validate = Validate[TARGET_LABEL].values
-x_test=test[list(features)].values
+train['sum']=train.sum(axis=1, numeric_only=True)
+test['sum']=test.sum(axis=1, numeric_only=True)
 
-random.seed(100)
-rf = RandomForestClassifier(n_estimators=1000)
-rf.fit(x_train, y_train)
+train['var']=train.var(axis=1, numeric_only=True)
+test['var']=test.var(axis=1, numeric_only=True)
 
-#status = rf.predict_proba(x_validate)
-#fpr, tpr, _ = roc_curve(y_validate, status[:,1])
-#roc_auc = auc(fpr, tpr)
-#print roc_auc
+train['filled']=train.astype(bool).sum(axis=1)
+test['filled']=test.astype(bool).sum(axis=1)
 
-final_status = rf.predict_proba(x_test)
+#train= scale(train, with_std = False)
+#test=scale(test, with_std = False)
 
-submission = pd.DataFrame({ "id": test["id"]})
+pca = PCA(n_components=20)
+pca.fit(train)
+train = pca.fit_transform(train)
 
-i = 0
+test=pca.fit_transform(test)
 
-# Create column name based on target values(see sample_submission.csv)
-for num in range_of_classes:
-    col_name = str("Class_{}".format(num))
-    submission[col_name] = final_status[:,i]
-    i = i + 1
-    
-submission.to_csv('otto.csv', index=False)
+# train a random forest classifier without calibration
+
+clf = RandomForestClassifier(n_estimators=1000)
+clf.fit(train, labels)
+preds = clf.predict_proba(test)
+calibrated_clf = CalibratedClassifierCV(clf, method='isotonic')
+calibrated_clf.fit(train, labels)
+preds = calibrated_clf.predict_proba(test)
+#print cross_val_score(clf, train, labels,scoring='log_loss', cv=10).mean()
+
+# create submission file
+preds = pd.DataFrame(preds, index=sample.id.values, columns=sample.columns[1:])
+preds.to_csv('output/RF_PCA_TF_IDF_sample.csv', index_label='id')
 

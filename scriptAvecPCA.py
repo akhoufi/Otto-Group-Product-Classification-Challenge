@@ -54,8 +54,8 @@ def plot_boundary(X, y, classifier, test_idx=None, resolution=0.02):
 
 
 # Lecture des données
-df_train = pd.read_csv("train.csv")
-df_test = pd.read_csv("train.csv")
+df_train = pd.read_csv("input/train.csv")
+df_test = pd.read_csv("input/test.csv")
 
 
 
